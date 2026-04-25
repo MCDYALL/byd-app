@@ -1,0 +1,863 @@
+import { useMemo, useState } from "react";
+import carImage from "./assets/dolphin.png";
+
+const VEHICLES = {
+  comfort: {
+    name: "BYD Dolphin Surf Comfort",
+    shortName: "Comfort",
+    batteryKwh: 30.0,
+    claimedRangeKm: 232,
+    powerKw: 55,
+    defaultDcChargeKw: 30,
+    defaultAcChargeKw: 7,
+    defaultWallChargeKw: 2.3,
+    defaultWallCostPerKwh: 3.25,
+    defaultAcCostPerKwh: 3.85,
+    defaultDcCostPerKwh: 6.75,
+    defaultEfficiency: 14.8,
+    defaultSafetyBuffer: 10,
+    notes: [
+      "30.0 kWh Blade Battery",
+      "232 km claimed range",
+      "55 kW motor",
+      "Up to 30 kW DC charging",
+    ],
+  },
+  dynamic: {
+    name: "BYD Dolphin Surf Dynamic",
+    shortName: "Dynamic",
+    batteryKwh: 38.8,
+    claimedRangeKm: 295,
+    powerKw: 55,
+    defaultDcChargeKw: 40,
+    defaultAcChargeKw: 7,
+    defaultWallChargeKw: 2.3,
+    defaultWallCostPerKwh: 3.25,
+    defaultAcCostPerKwh: 3.85,
+    defaultDcCostPerKwh: 6.75,
+    defaultEfficiency: 14.8,
+    defaultSafetyBuffer: 10,
+    notes: [
+      "38.8 kWh Blade Battery",
+      "295 km claimed range",
+      "55 kW motor",
+      "Up to 40 kW DC charging",
+    ],
+  },
+};
+
+const CHARGE_TYPES = [
+  { key: "wall", label: "Wall" },
+  { key: "ac", label: "AC" },
+  { key: "dc", label: "DC" },
+];
+
+export default function App() {
+  const [tab, setTab] = useState("trip");
+  const [selectedVehicle, setSelectedVehicle] = useState("dynamic");
+  const [chargeType, setChargeType] = useState("wall");
+
+  const [batteryPercent, setBatteryPercent] = useState(80);
+  const [tripDistance, setTripDistance] = useState(120);
+  const [chargeStart, setChargeStart] = useState(20);
+  const [chargeTarget, setChargeTarget] = useState(80);
+
+  const [efficiency, setEfficiency] = useState(
+    VEHICLES.dynamic.defaultEfficiency
+  );
+  const [safetyBuffer, setSafetyBuffer] = useState(
+    VEHICLES.dynamic.defaultSafetyBuffer
+  );
+
+  const [wallChargeKw, setWallChargeKw] = useState(
+    VEHICLES.dynamic.defaultWallChargeKw
+  );
+  const [acChargeKw, setAcChargeKw] = useState(
+    VEHICLES.dynamic.defaultAcChargeKw
+  );
+  const [dcChargeKwComfort, setDcChargeKwComfort] = useState(
+    VEHICLES.comfort.defaultDcChargeKw
+  );
+  const [dcChargeKwDynamic, setDcChargeKwDynamic] = useState(
+    VEHICLES.dynamic.defaultDcChargeKw
+  );
+
+  const [wallCostPerKwh, setWallCostPerKwh] = useState(
+    VEHICLES.dynamic.defaultWallCostPerKwh
+  );
+  const [acCostPerKwh, setAcCostPerKwh] = useState(
+    VEHICLES.dynamic.defaultAcCostPerKwh
+  );
+  const [dcCostPerKwh, setDcCostPerKwh] = useState(
+    VEHICLES.dynamic.defaultDcCostPerKwh
+  );
+
+  const vehicle = VEHICLES[selectedVehicle];
+  const batterySize = vehicle.batteryKwh;
+  const selectedDcChargeKw =
+    selectedVehicle === "comfort" ? dcChargeKwComfort : dcChargeKwDynamic;
+
+  const selectedChargePower = useMemo(() => {
+    if (chargeType === "wall") return wallChargeKw;
+    if (chargeType === "ac") return acChargeKw;
+    return selectedDcChargeKw;
+  }, [chargeType, wallChargeKw, acChargeKw, selectedDcChargeKw]);
+
+  const costPerKwh = useMemo(() => {
+    if (chargeType === "wall") return wallCostPerKwh;
+    if (chargeType === "ac") return acCostPerKwh;
+    return dcCostPerKwh;
+  }, [chargeType, wallCostPerKwh, acCostPerKwh, dcCostPerKwh]);
+
+  const availableRange = useMemo(() => {
+    const usableKwh = (batteryPercent / 100) * batterySize;
+    return (usableKwh / efficiency) * 100;
+  }, [batteryPercent, batterySize, efficiency]);
+
+  const tripEnergyNeeded = useMemo(() => {
+    return (tripDistance * efficiency) / 100;
+  }, [tripDistance, efficiency]);
+
+  const batteryUsedForTripPercent = useMemo(() => {
+    return (tripEnergyNeeded / batterySize) * 100;
+  }, [tripEnergyNeeded, batterySize]);
+
+  const batteryAfterTrip = useMemo(() => {
+    return Math.max(batteryPercent - batteryUsedForTripPercent, 0);
+  }, [batteryPercent, batteryUsedForTripPercent]);
+
+  const suggestedMinimumBattery = useMemo(() => {
+    return Math.min(Math.ceil(batteryUsedForTripPercent + safetyBuffer), 100);
+  }, [batteryUsedForTripPercent, safetyBuffer]);
+
+  const hasEnoughBatteryForTrip = batteryPercent >= suggestedMinimumBattery;
+
+  const chargeEnergyToAdd = useMemo(() => {
+    if (chargeTarget <= chargeStart) return 0;
+    return ((chargeTarget - chargeStart) / 100) * batterySize;
+  }, [chargeStart, chargeTarget, batterySize]);
+
+  const chargeTimeHoursDecimal = useMemo(() => {
+    if (selectedChargePower <= 0 || chargeTarget <= chargeStart) return 0;
+    return chargeEnergyToAdd / selectedChargePower;
+  }, [selectedChargePower, chargeTarget, chargeStart, chargeEnergyToAdd]);
+
+  const formattedChargeTime = useMemo(() => {
+    if (chargeTarget <= chargeStart) return "Set target above start";
+
+    const totalMinutes = Math.round(chargeTimeHoursDecimal * 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours === 0) return `${minutes} min`;
+    if (minutes === 0) return `${hours} hr`;
+    return `${hours} hr ${minutes} min`;
+  }, [chargeTimeHoursDecimal, chargeTarget, chargeStart]);
+
+  const estimatedChargeCost = useMemo(() => {
+    return chargeEnergyToAdd * costPerKwh;
+  }, [chargeEnergyToAdd, costPerKwh]);
+
+  const resetDefaults = () => {
+    setEfficiency(VEHICLES.dynamic.defaultEfficiency);
+    setSafetyBuffer(VEHICLES.dynamic.defaultSafetyBuffer);
+
+    setWallChargeKw(VEHICLES.dynamic.defaultWallChargeKw);
+    setAcChargeKw(VEHICLES.dynamic.defaultAcChargeKw);
+    setDcChargeKwComfort(VEHICLES.comfort.defaultDcChargeKw);
+    setDcChargeKwDynamic(VEHICLES.dynamic.defaultDcChargeKw);
+
+    setWallCostPerKwh(VEHICLES.dynamic.defaultWallCostPerKwh);
+    setAcCostPerKwh(VEHICLES.dynamic.defaultAcCostPerKwh);
+    setDcCostPerKwh(VEHICLES.dynamic.defaultDcCostPerKwh);
+  };
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background:
+          "linear-gradient(180deg, #eaf2ff 0%, #f7f9fc 45%, #eef3f8 100%)",
+        display: "flex",
+        justifyContent: "center",
+        padding: "24px 12px",
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 430,
+          background: "#fdfefe",
+          borderRadius: 36,
+          boxShadow: "0 24px 60px rgba(15, 23, 42, 0.16)",
+          overflow: "hidden",
+          border: "1px solid rgba(255,255,255,0.75)",
+        }}
+      >
+        <div
+          style={{
+            background:
+              "linear-gradient(135deg, #07152f 0%, #0d2347 55%, #153971 100%)",
+            padding: 22,
+            color: "white",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              marginBottom: 18,
+            }}
+          >
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#ef4444",
+                color: "white",
+                borderRadius: 999,
+                width: 54,
+                height: 54,
+                fontWeight: 800,
+                letterSpacing: 1,
+                fontSize: 20,
+                boxShadow: "0 10px 25px rgba(239,68,68,0.35)",
+              }}
+            >
+              BYD
+            </div>
+
+            <div
+              style={{
+                background: "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.14)",
+                borderRadius: 18,
+                padding: "10px 14px",
+                textAlign: "right",
+                backdropFilter: "blur(10px)",
+              }}
+            >
+              <div style={{ fontSize: 12, opacity: 0.75 }}>Licensed to</div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>Mark Dyall</div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              background:
+                "linear-gradient(160deg, rgba(255,255,255,0.18), rgba(255,255,255,0.07))",
+              borderRadius: 28,
+              padding: 18,
+              border: "1px solid rgba(255,255,255,0.12)",
+              backdropFilter: "blur(10px)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              {Object.entries(VEHICLES).map(([key, item]) => {
+                const active = selectedVehicle === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedVehicle(key)}
+                    style={{
+                      border: "none",
+                      borderRadius: 14,
+                      padding: "10px 14px",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: "pointer",
+                      background: active ? "#ffffff" : "rgba(255,255,255,0.14)",
+                      color: active ? "#0f172a" : "#ffffff",
+                      boxShadow: active
+                        ? "0 10px 24px rgba(0,0,0,0.18)"
+                        : "inset 0 0 0 1px rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    {item.shortName}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div
+              style={{
+                fontSize: 13,
+                opacity: 0.8,
+                marginBottom: 10,
+                letterSpacing: 0.4,
+              }}
+            >
+              EV Range Planner
+            </div>
+
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 800,
+                lineHeight: 1.1,
+                marginBottom: 16,
+              }}
+            >
+              {vehicle.name}
+            </div>
+
+            <div
+              style={{
+                background: "rgba(255,255,255,0.1)",
+                borderRadius: 22,
+                padding: 14,
+                marginBottom: 16,
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                minHeight: 210,
+              }}
+            >
+              <img
+                src={carImage}
+                alt={vehicle.name}
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: 190,
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                background: "rgba(255,255,255,0.12)",
+                borderRadius: 20,
+                padding: 16,
+                border: "1px solid rgba(255,255,255,0.1)",
+              }}
+            >
+              <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>
+                Current battery
+              </div>
+              <div style={{ fontSize: 30, fontWeight: 800 }}>
+                {batteryPercent}%
+              </div>
+              <div style={{ marginTop: 10 }}>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={batteryPercent}
+                  onChange={(e) => setBatteryPercent(Number(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: 18 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 10,
+              marginBottom: 18,
+            }}
+          >
+            {[
+              { key: "trip", label: "Trip" },
+              { key: "charge", label: "Charge" },
+              { key: "specs", label: "Specs" },
+              { key: "settings", label: "Set" },
+            ].map((item) => {
+              const active = tab === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => setTab(item.key)}
+                  style={{
+                    border: "none",
+                    borderRadius: 16,
+                    padding: "14px 8px",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    cursor: "pointer",
+                    background: active ? "#0f172a" : "#eef2f7",
+                    color: active ? "white" : "#334155",
+                    boxShadow: active
+                      ? "0 12px 24px rgba(15,23,42,0.22)"
+                      : "inset 0 0 0 1px rgba(148,163,184,0.18)",
+                  }}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {tab === "trip" && (
+            <div style={{ display: "grid", gap: 14 }}>
+              <SectionCard
+                title="Trip Calculator"
+                subtitle="Plan your trip and see whether your current battery is enough."
+              >
+                <SliderField
+                  label="Planned trip distance"
+                  value={tripDistance}
+                  suffix=" km"
+                  min={10}
+                  max={500}
+                  onChange={setTripDistance}
+                />
+              </SectionCard>
+
+              {!hasEnoughBatteryForTrip && (
+                <WarningCard
+                  text="Warning: Current battery is not sufficient for this trip while keeping your safety buffer. Please charge the vehicle first or reduce the planned trip distance."
+                />
+              )}
+
+              <InfoRow
+                label="Estimated available range"
+                value={`${Math.round(availableRange)} km`}
+              />
+              <InfoRow
+                label="Energy needed for trip"
+                value={`${tripEnergyNeeded.toFixed(1)} kWh`}
+              />
+              <InfoRow
+                label="Battery expected after trip"
+                value={`${batteryAfterTrip.toFixed(0)}%`}
+              />
+              <InfoRow
+                label="Suggested minimum battery before trip"
+                value={`${suggestedMinimumBattery}%`}
+              />
+            </div>
+          )}
+
+          {tab === "charge" && (
+            <div style={{ display: "grid", gap: 14 }}>
+              <SectionCard
+                title="Charging Estimate"
+                subtitle="Choose the charging method you want to use."
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: 10,
+                  }}
+                >
+                  {CHARGE_TYPES.map((item) => {
+                    const active = chargeType === item.key;
+                    return (
+                      <button
+                        key={item.key}
+                        onClick={() => setChargeType(item.key)}
+                        style={{
+                          border: "none",
+                          borderRadius: 14,
+                          padding: "12px 10px",
+                          fontWeight: 700,
+                          fontSize: 14,
+                          cursor: "pointer",
+                          background: active ? "#0f172a" : "#eef2f7",
+                          color: active ? "white" : "#334155",
+                          boxShadow: active
+                            ? "0 12px 24px rgba(15,23,42,0.18)"
+                            : "inset 0 0 0 1px rgba(148,163,184,0.16)",
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <SliderField
+                  label="Charge start"
+                  value={chargeStart}
+                  suffix="%"
+                  min={0}
+                  max={100}
+                  onChange={setChargeStart}
+                />
+                <SliderField
+                  label="Charge target"
+                  value={chargeTarget}
+                  suffix="%"
+                  min={0}
+                  max={100}
+                  onChange={setChargeTarget}
+                />
+              </SectionCard>
+
+              <div
+                style={{
+                  background: "#0f172a",
+                  color: "white",
+                  borderRadius: 24,
+                  padding: 20,
+                  boxShadow: "0 16px 36px rgba(15,23,42,0.24)",
+                }}
+              >
+                <div style={{ fontSize: 13, opacity: 0.72, marginBottom: 8 }}>
+                  Estimated charging time
+                </div>
+                <div style={{ fontSize: 34, fontWeight: 800 }}>
+                  {formattedChargeTime}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 18,
+                    fontSize: 13,
+                    opacity: 0.72,
+                    marginBottom: 8,
+                  }}
+                >
+                  Estimated charging cost
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 800 }}>
+                  R{estimatedChargeCost.toFixed(2)}
+                </div>
+
+                <div style={{ marginTop: 10, fontSize: 13, opacity: 0.74 }}>
+                  Based on {vehicle.batteryKwh} kWh battery using{" "}
+                  {selectedChargePower.toFixed(1)} kW charging at R
+                  {costPerKwh.toFixed(2)}/kWh.
+                </div>
+              </div>
+
+              <InfoRow
+                label="Energy to add"
+                value={`${chargeEnergyToAdd.toFixed(1)} kWh`}
+              />
+            </div>
+          )}
+
+          {tab === "specs" && (
+            <div style={{ display: "grid", gap: 14 }}>
+              <SectionCard
+                title={`${vehicle.shortName} specifications`}
+                subtitle="Vehicle and planning assumptions used by the app"
+              >
+                {vehicle.notes.map((note) => (
+                  <SpecPill key={note} text={note} />
+                ))}
+              </SectionCard>
+
+              <InfoRow label="Battery size" value={`${vehicle.batteryKwh} kWh`} />
+              <InfoRow
+                label="Claimed range"
+                value={`${vehicle.claimedRangeKm} km`}
+              />
+              <InfoRow label="Motor output" value={`${vehicle.powerKw} kW`} />
+              <InfoRow label="Efficiency" value={`${efficiency.toFixed(1)} kWh/100km`} />
+              <InfoRow
+                label="Safety buffer"
+                value={`${safetyBuffer.toFixed(0)}%`}
+              />
+              <InfoRow
+                label="Wall charging"
+                value={`${wallChargeKw.toFixed(1)} kW`}
+              />
+              <InfoRow label="AC charging" value={`${acChargeKw.toFixed(1)} kW`} />
+              <InfoRow
+                label="DC charging"
+                value={`${selectedDcChargeKw.toFixed(1)} kW`}
+              />
+            </div>
+          )}
+
+          {tab === "settings" && (
+            <div style={{ display: "grid", gap: 14 }}>
+              <SectionCard
+                title="Trip Settings"
+                subtitle="Adjust the planning assumptions used in the trip calculator."
+              >
+                <NumberField
+                  label="Efficiency"
+                  value={efficiency}
+                  setValue={setEfficiency}
+                  suffix=" kWh/100km"
+                  step="0.1"
+                />
+                <NumberField
+                  label="Safety buffer"
+                  value={safetyBuffer}
+                  setValue={setSafetyBuffer}
+                  suffix="%"
+                  step="1"
+                />
+              </SectionCard>
+
+              <SectionCard
+                title="Charging Speeds"
+                subtitle="Adjust your charging speeds if your setup differs."
+              >
+                <NumberField
+                  label="Wall charging speed"
+                  value={wallChargeKw}
+                  setValue={setWallChargeKw}
+                  suffix=" kW"
+                  step="0.1"
+                />
+                <NumberField
+                  label="AC charging speed"
+                  value={acChargeKw}
+                  setValue={setAcChargeKw}
+                  suffix=" kW"
+                  step="0.1"
+                />
+                <NumberField
+                  label="Comfort DC charging speed"
+                  value={dcChargeKwComfort}
+                  setValue={setDcChargeKwComfort}
+                  suffix=" kW"
+                  step="0.1"
+                />
+                <NumberField
+                  label="Dynamic DC charging speed"
+                  value={dcChargeKwDynamic}
+                  setValue={setDcChargeKwDynamic}
+                  suffix=" kW"
+                  step="0.1"
+                />
+              </SectionCard>
+
+              <SectionCard
+                title="Electricity Costs"
+                subtitle="Enter the electricity rates you are actually paying."
+              >
+                <NumberField
+                  label="Wall charging cost"
+                  value={wallCostPerKwh}
+                  setValue={setWallCostPerKwh}
+                  suffix=" R/kWh"
+                  step="0.01"
+                />
+                <NumberField
+                  label="AC charging cost"
+                  value={acCostPerKwh}
+                  setValue={setAcCostPerKwh}
+                  suffix=" R/kWh"
+                  step="0.01"
+                />
+                <NumberField
+                  label="DC charging cost"
+                  value={dcCostPerKwh}
+                  setValue={setDcCostPerKwh}
+                  suffix=" R/kWh"
+                  step="0.01"
+                />
+              </SectionCard>
+
+              <button
+                onClick={resetDefaults}
+                style={{
+                  border: "none",
+                  borderRadius: 18,
+                  padding: "16px 18px",
+                  fontWeight: 700,
+                  fontSize: 15,
+                  cursor: "pointer",
+                  background: "#0f172a",
+                  color: "white",
+                  boxShadow: "0 12px 24px rgba(15,23,42,0.2)",
+                }}
+              >
+                Reset defaults
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionCard({ title, subtitle, children }) {
+  return (
+    <div
+      style={{
+        background: "white",
+        borderRadius: 24,
+        padding: 18,
+        boxShadow: "0 12px 30px rgba(15,23,42,0.08)",
+        border: "1px solid rgba(148,163,184,0.12)",
+      }}
+    >
+      <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
+        {title}
+      </div>
+      <div
+        style={{
+          marginTop: 4,
+          marginBottom: 16,
+          color: "#64748b",
+          fontSize: 14,
+          lineHeight: 1.5,
+        }}
+      >
+        {subtitle}
+      </div>
+      <div style={{ display: "grid", gap: 16 }}>{children}</div>
+    </div>
+  );
+}
+
+function SliderField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  suffix = "",
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: 8,
+          color: "#0f172a",
+          fontWeight: 600,
+          fontSize: 14,
+        }}
+      >
+        <span>{label}</span>
+        <span style={{ color: "#334155" }}>
+          {value}
+          {suffix}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ width: "100%" }}
+      />
+    </div>
+  );
+}
+
+function NumberField({ label, value, setValue, suffix = "", step = "0.1" }) {
+  const decimals = step === "0.01" ? 2 : step === "1" ? 0 : 1;
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: 8,
+          color: "#0f172a",
+          fontWeight: 600,
+          fontSize: 14,
+        }}
+      >
+        <span>{label}</span>
+        <span style={{ color: "#334155" }}>
+          {Number(value).toFixed(decimals)}
+          {suffix}
+        </span>
+      </div>
+      <input
+        type="number"
+        step={step}
+        value={value}
+        onChange={(e) => setValue(Number(e.target.value) || 0)}
+        style={{
+          width: "100%",
+          borderRadius: 14,
+          border: "1px solid rgba(148,163,184,0.3)",
+          padding: "12px 14px",
+          fontSize: 15,
+          outline: "none",
+          boxSizing: "border-box",
+        }}
+      />
+    </div>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div
+      style={{
+        background: "#f8fafc",
+        borderRadius: 20,
+        padding: "16px 18px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        border: "1px solid rgba(148,163,184,0.14)",
+      }}
+    >
+      <div style={{ color: "#475569", fontSize: 14, paddingRight: 12 }}>
+        {label}
+      </div>
+      <div
+        style={{
+          color: "#0f172a",
+          fontSize: 20,
+          fontWeight: 800,
+          textAlign: "right",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function WarningCard({ text }) {
+  return (
+    <div
+      style={{
+        background: "#fff1f2",
+        border: "1px solid #fecdd3",
+        color: "#be123c",
+        borderRadius: 20,
+        padding: "16px 18px",
+        boxShadow: "0 10px 24px rgba(190,18,60,0.08)",
+      }}
+    >
+      <div style={{ fontWeight: 800, marginBottom: 6 }}>Trip warning</div>
+      <div style={{ fontSize: 14, lineHeight: 1.5 }}>{text}</div>
+    </div>
+  );
+}
+
+function SpecPill({ text }) {
+  return (
+    <div
+      style={{
+        background: "#eef4ff",
+        color: "#183153",
+        padding: "12px 14px",
+        borderRadius: 14,
+        fontWeight: 600,
+        fontSize: 14,
+      }}
+    >
+      {text}
+    </div>
+  );
+}
