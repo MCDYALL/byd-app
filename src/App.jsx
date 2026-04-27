@@ -62,6 +62,12 @@ const CAR_COLOURS = [
 export default function App() {
   const [appStep, setAppStep] = useState("login");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+const [userEmail, setUserEmail] = useState("");
+const [userPassword, setUserPassword] = useState("");
+const [loginError, setLoginError] = useState("");
+const LOGIN_TRACKER_URL = "https://script.google.com/macros/s/AKfycby50spBRfSng8vMkbav3DHB1Oeeod0PC4yMJ3ZTZXaWXtc5e0MW-zLfjh6CTTKDrGJcmQ/exec";
+const APP_PASSWORD = "1234";
+const APP_VERSION = "v1-login-test";
 
   const [tab, setTab] = useState("trip");
   const [selectedVehicle, setSelectedVehicle] = useState("dynamic");
@@ -176,22 +182,79 @@ export default function App() {
     setDcCostPerKwh(VEHICLES.dynamic.defaultDcCostPerKwh);
   };
 
-  if (appStep === "login") {
-    return (
-      <ScreenShell>
-        <div style={loginCard}>
-          <div style={bydBadge}>BYD</div>
-          <h1 style={{ margin: 0, fontSize: 28, lineHeight: 1.1, whiteSpace: "normal", textAlign: "center" }}>
-  BYD Dolphin Surf
-</h1>
-          <p style={{ color: "#64748b" }}>Range, trip and charging calculator</p>
-          <button style={primaryButton} onClick={() => setAppStep("terms")}>
-            Enter App
-          </button>
-        </div>
-      </ScreenShell>
-    );
-  }
+if (appStep === "login") {
+  const handleLogin = async () => {
+    if (userPassword !== APP_PASSWORD) {
+      setLoginError("Incorrect password");
+      return;
+    }
+
+    if (!userEmail) {
+      setLoginError("Please enter your email");
+      return;
+    }
+
+    setLoginError("");
+
+    try {
+      await fetch(LOGIN_TRACKER_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          name: userEmail,
+          password: userPassword,
+          version: APP_VERSION,
+          device: navigator.userAgent,
+        }),
+      });
+    } catch (err) {
+      console.log("Tracking failed");
+    }
+
+    setAppStep("terms");
+  };
+
+  return (
+    <ScreenShell>
+      <div style={loginCard}>
+        <div style={bydBadge}>BYD</div>
+
+        <h1 style={{ margin: 0, fontSize: 28, lineHeight: 1.1, textAlign: "center" }}>
+          BYD Dolphin Surf
+        </h1>
+
+        <p style={{ textAlign: "center", color: "#64748b" }}>
+          Enter your email and password to continue
+        </p>
+
+        <input
+          type="email"
+          placeholder="Enter your email"
+          value={userEmail}
+          onChange={(e) => setUserEmail(e.target.value)}
+          style={{ width: "100%", marginBottom: 10, padding: 10 }}
+        />
+
+        <input
+          type="password"
+          placeholder="Enter password"
+          value={userPassword}
+          onChange={(e) => setUserPassword(e.target.value)}
+          style={{ width: "100%", marginBottom: 10, padding: 10 }}
+        />
+
+        {loginError && (
+          <div style={{ color: "red", marginBottom: 10 }}>
+            {loginError}
+          </div>
+        )}
+
+        <button style={primaryButton} onClick={handleLogin}>
+          Enter App
+        </button>
+      </div>
+    </ScreenShell>
+  );
+}
 
   if (appStep === "terms") {
     return (
