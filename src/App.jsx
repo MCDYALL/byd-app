@@ -932,4 +932,4 @@ const specPill = {
   borderRadius: 14,
   fontWeight: 600,
   fontSize: 14,
-};
+}; 
